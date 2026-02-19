@@ -1,0 +1,18 @@
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# Streamlit 密钥（绝对不能上传！）
+.streamlit/secrets.toml
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS 系统文件
+.DS_Store
+
+# Windows 系统文件
+Thumbs.db
