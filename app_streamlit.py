@@ -424,14 +424,19 @@ def ensure_fresh_data():
         ).fetchone()
         conn.close()
         latest_ts = row[0] if row and row[0] else 0
-        # 数据超过2小时没更新，则重新生成
+        # 数据超过2小时没更新，则清空重新生成
         if int(time.time()) - latest_ts > 7200:
-            quick_generate.create_database()
+            conn2 = sqlite3.connect(DB_PATH, check_same_thread=False)
+            conn2.execute("DELETE FROM metric")
+            conn2.commit()
+            conn2.close()
             for city_name, config in quick_generate.CITY_CONFIG.items():
                 quick_generate.generate_city_data(city_name, config, hours=24, interval=30)
     except Exception:
-        # 数据库不存在时直接全量生成
-        quick_generate.main()
+        # 数据库/表不存在时，初始化并全量生成
+        quick_generate.create_database()
+        for city_name, config in quick_generate.CITY_CONFIG.items():
+            quick_generate.generate_city_data(city_name, config, hours=24, interval=30)
     st.session_state["data_initialized"] = True
 
 
