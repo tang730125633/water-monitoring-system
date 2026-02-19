@@ -11,6 +11,7 @@ import time
 import streamlit as st
 import plotly.graph_objects as go
 import auth
+import quick_generate
 
 # 页面配置
 st.set_page_config(
@@ -412,7 +413,30 @@ def show_dashboard():
 # 入口
 # ─────────────────────────────────────────────
 
+def ensure_fresh_data():
+    """检查数据是否过期，过期则重新生成（每次启动只跑一次）"""
+    if st.session_state.get("data_initialized"):
+        return
+    try:
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        row = conn.execute(
+            "SELECT MAX(ts) FROM metric"
+        ).fetchone()
+        conn.close()
+        latest_ts = row[0] if row and row[0] else 0
+        # 数据超过2小时没更新，则重新生成
+        if int(time.time()) - latest_ts > 7200:
+            quick_generate.create_database()
+            for city_name, config in quick_generate.CITY_CONFIG.items():
+                quick_generate.generate_city_data(city_name, config, hours=24, interval=30)
+    except Exception:
+        # 数据库不存在时直接全量生成
+        quick_generate.main()
+    st.session_state["data_initialized"] = True
+
+
 def main():
+    ensure_fresh_data()
     if not auth.is_logged_in():
         show_auth_page()
     else:
