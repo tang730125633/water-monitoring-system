@@ -36,6 +36,7 @@ CITY_DEVICE_MAP = {
     "杭州市": "water_sensor_hangzhou",
     "南京市": "water_sensor_nanjing",
     "重庆市": "water_sensor_chongqing",
+    "巢湖市": "water_sensor_chaohu",
 }
 
 
