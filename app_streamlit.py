@@ -2,7 +2,6 @@
 """
 水环境监测数据可视化仪表盘
 使用Streamlit展示实时数据曲线和告警信息
-支持用户登录/注册（Supabase云端认证）
 """
 
 import sqlite3
@@ -11,7 +10,6 @@ import time
 import os
 import streamlit as st
 import plotly.graph_objects as go
-import auth
 import quick_generate
 
 # 页面配置
@@ -39,109 +37,6 @@ CITY_DEVICE_MAP = {
     "重庆市": "water_sensor_chongqing",
     "巢湖市": "water_sensor_chaohu",
 }
-
-
-# ─────────────────────────────────────────────
-# 登录 / 注册 页面
-# ─────────────────────────────────────────────
-
-def show_auth_page():
-    """未登录时展示的登录/注册界面"""
-
-    # 自定义样式
-    st.markdown("""
-    <style>
-    /* 隐藏默认顶栏 deploy 按钮等 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-
-    /* 登录卡片居中 */
-    .auth-card {
-        max-width: 440px;
-        margin: 60px auto 0 auto;
-        padding: 40px 36px;
-        background: #ffffff;
-        border-radius: 16px;
-        box-shadow: 0 4px 24px rgba(26,82,118,0.12);
-        border: 1px solid #D6EAF8;
-    }
-    .auth-title {
-        text-align: center;
-        color: #1A5276;
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: 4px;
-    }
-    .auth-subtitle {
-        text-align: center;
-        color: #5D6D7E;
-        font-size: 0.9rem;
-        margin-bottom: 28px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # ── 居中 Logo & 标题 ──
-    col_l, col_c, col_r = st.columns([1, 2, 1])
-    with col_c:
-        st.markdown('<div class="auth-title">💧 水环境监测系统</div>', unsafe_allow_html=True)
-        st.markdown('<div class="auth-subtitle">Water Environment Monitoring System</div>', unsafe_allow_html=True)
-        st.markdown("---")
-
-        # ── 登录 / 注册 两个标签页 ──
-        tab_login, tab_register = st.tabs(["🔑 登录", "📝 注册账号"])
-
-        # ── 登录 Tab ──
-        with tab_login:
-            st.markdown("#### 欢迎回来")
-            with st.form("login_form", clear_on_submit=False):
-                email = st.text_input("邮箱", placeholder="your@email.com")
-                password = st.text_input("密码", type="password", placeholder="请输入密码")
-                submitted = st.form_submit_button("登 录", use_container_width=True, type="primary")
-
-            if submitted:
-                if not email or not password:
-                    st.error("请填写邮箱和密码")
-                else:
-                    with st.spinner("登录中..."):
-                        user, err = auth.login(email.strip(), password)
-                    if err:
-                        st.error(f"❌ {err}")
-                    else:
-                        auth.set_session(user)
-                        st.success("✅ 登录成功！")
-                        time.sleep(0.8)
-                        st.rerun()
-
-        # ── 注册 Tab ──
-        with tab_register:
-            st.markdown("#### 创建新账号")
-            with st.form("register_form", clear_on_submit=True):
-                reg_email = st.text_input("邮箱", placeholder="your@email.com", key="reg_email")
-                reg_pwd = st.text_input("密码（至少6位）", type="password", placeholder="请设置密码", key="reg_pwd")
-                reg_pwd2 = st.text_input("确认密码", type="password", placeholder="再输入一次密码", key="reg_pwd2")
-                reg_submitted = st.form_submit_button("注 册", use_container_width=True, type="primary")
-
-            if reg_submitted:
-                if not reg_email or not reg_pwd:
-                    st.error("请填写完整信息")
-                elif reg_pwd != reg_pwd2:
-                    st.error("❌ 两次密码不一致，请重新输入")
-                elif len(reg_pwd) < 6:
-                    st.error("❌ 密码至少需要6位字符")
-                else:
-                    with st.spinner("注册中..."):
-                        user, err = auth.register(reg_email.strip(), reg_pwd)
-                    if err:
-                        st.error(f"❌ {err}")
-                    else:
-                        # Supabase 默认需要邮箱验证
-                        # 如果你在 Supabase 关闭了邮箱验证，user 会直接返回已激活账号
-                        if user and user.email:
-                            st.success("✅ 注册成功！请切换到「登录」标签页登录。")
-                            st.info("💡 提示：如果无法登录，请检查邮箱是否收到验证邮件并点击确认。")
-                        else:
-                            st.warning("注册请求已发送，请查收验证邮件后再登录。")
 
 
 # ─────────────────────────────────────────────
@@ -292,16 +187,7 @@ def create_gauge_chart(value, title, min_val, max_val, color):
 # ─────────────────────────────────────────────
 
 def show_dashboard():
-    """已登录后展示的主仪表盘"""
-
-    # 侧边栏 - 用户信息 & 退出
-    st.sidebar.markdown("---")
-    user_email = auth.get_current_user_email()
-    st.sidebar.markdown(f"👤 **{user_email}**")
-    if st.sidebar.button("退出登录", use_container_width=True):
-        auth.logout()
-        st.rerun()
-    st.sidebar.markdown("---")
+    """主仪表盘"""
 
     # 城市选择
     st.sidebar.header("📍 地区选择")
@@ -444,10 +330,7 @@ def ensure_fresh_data():
 
 def main():
     ensure_fresh_data()
-    if not auth.is_logged_in():
-        show_auth_page()
-    else:
-        show_dashboard()
+    show_dashboard()
 
 
 if __name__ == "__main__":
