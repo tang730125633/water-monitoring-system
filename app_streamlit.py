@@ -8,6 +8,7 @@
 import sqlite3
 import pandas as pd
 import time
+import os
 import streamlit as st
 import plotly.graph_objects as go
 import auth
@@ -21,8 +22,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 数据库配置
-DB_PATH = "water.db"
+# 数据库配置 - 使用脚本所在目录的绝对路径
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "water.db")
 
 # 城市到设备的映射
 CITY_DEVICE_MAP = {

@@ -7,9 +7,10 @@
 import sqlite3
 import time
 import random
+import os
 from datetime import datetime, timedelta
 
-DB_PATH = "water.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "water.db")
 
 # 城市配置
 CITY_CONFIG = {
