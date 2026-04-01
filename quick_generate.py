@@ -10,7 +10,16 @@ import random
 import os
 from datetime import datetime, timedelta
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "water.db")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_TMP_DB = "/tmp/water.db"
+_LOCAL_DB = os.path.join(_SCRIPT_DIR, "water.db")
+
+if os.path.exists(_TMP_DB):
+    DB_PATH = _TMP_DB
+elif os.access(_SCRIPT_DIR, os.W_OK):
+    DB_PATH = _LOCAL_DB
+else:
+    DB_PATH = _TMP_DB
 
 # 城市配置
 CITY_CONFIG = {

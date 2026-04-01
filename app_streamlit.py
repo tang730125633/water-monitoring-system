@@ -20,8 +20,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 数据库配置 - 使用脚本所在目录的绝对路径
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "water.db")
+# 数据库配置
+# Streamlit Cloud 的 repo 目录可能只读，优先用 /tmp
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_TMP_DB = "/tmp/water.db"
+_LOCAL_DB = os.path.join(_SCRIPT_DIR, "water.db")
+
+if os.path.exists(_TMP_DB):
+    DB_PATH = _TMP_DB
+elif os.access(_SCRIPT_DIR, os.W_OK):
+    DB_PATH = _LOCAL_DB
+else:
+    # Cloud 环境：复制 repo 里的 db 到 /tmp（如果存在的话）
+    import shutil
+    if os.path.exists(_LOCAL_DB):
+        shutil.copy2(_LOCAL_DB, _TMP_DB)
+    DB_PATH = _TMP_DB
 
 # 城市到设备的映射
 CITY_DEVICE_MAP = {
