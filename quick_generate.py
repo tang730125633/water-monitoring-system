@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-快速生成测试数据到数据库（Windows兼容版本）
+快速生成测试数据到数据库
 """
 
 import sqlite3
 import time
 import random
 import os
-from datetime import datetime, timedelta
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _TMP_DB = "/tmp/water.db"
@@ -21,7 +20,7 @@ elif os.access(_SCRIPT_DIR, os.W_OK):
 else:
     DB_PATH = _TMP_DB
 
-# 城市配置
+# 城市配置 - 必须和 app_streamlit.py 中的 CITY_DEVICE_MAP 完全对应
 CITY_CONFIG = {
     "北京市": {
         "device_id": "water_sensor_beijing",
@@ -63,6 +62,26 @@ CITY_CONFIG = {
             "ec": (100.0, 600.0),
         }
     },
+    "成都市": {
+        "device_id": "water_sensor_chengdu",
+        "data_ranges": {
+            "ph": (7.0, 8.0),
+            "do": (5.5, 9.5),
+            "turb": (1.0, 4.5),
+            "temp": (10.0, 28.0),
+            "ec": (200.0, 900.0),
+        }
+    },
+    "武汉市": {
+        "device_id": "water_sensor_wuhan",
+        "data_ranges": {
+            "ph": (6.8, 7.8),
+            "do": (5.0, 10.0),
+            "turb": (1.2, 4.0),
+            "temp": (8.0, 32.0),
+            "ec": (180.0, 850.0),
+        }
+    },
     "西安市": {
         "device_id": "water_sensor_xian",
         "data_ranges": {
@@ -71,6 +90,36 @@ CITY_CONFIG = {
             "turb": (0.8, 3.0),
             "temp": (5.0, 30.0),
             "ec": (400.0, 1500.0),
+        }
+    },
+    "杭州市": {
+        "device_id": "water_sensor_hangzhou",
+        "data_ranges": {
+            "ph": (6.8, 7.6),
+            "do": (6.0, 11.0),
+            "turb": (0.6, 3.0),
+            "temp": (10.0, 33.0),
+            "ec": (150.0, 750.0),
+        }
+    },
+    "南京市": {
+        "device_id": "water_sensor_nanjing",
+        "data_ranges": {
+            "ph": (7.0, 8.0),
+            "do": (5.5, 10.5),
+            "turb": (1.0, 3.5),
+            "temp": (6.0, 31.0),
+            "ec": (200.0, 950.0),
+        }
+    },
+    "重庆市": {
+        "device_id": "water_sensor_chongqing",
+        "data_ranges": {
+            "ph": (7.0, 8.2),
+            "do": (5.0, 9.5),
+            "turb": (1.5, 5.5),
+            "temp": (12.0, 34.0),
+            "ec": (180.0, 800.0),
         }
     },
     "巢湖市": {
@@ -114,7 +163,6 @@ def create_database():
     )
     conn.commit()
     conn.close()
-    print("[OK] Database created successfully")
 
 
 def generate_city_data(city_name, city_config, hours=24, interval=30):
@@ -125,25 +173,26 @@ def generate_city_data(city_name, city_config, hours=24, interval=30):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 计算时间范围
     end_time = int(time.time())
     start_time = end_time - hours * 3600
 
-    seq = 0
+    # 获取该设备当前最大 seq
+    row = cursor.execute(
+        "SELECT MAX(seq) FROM metric WHERE device_id = ?", (device_id,)
+    ).fetchone()
+    seq = (row[0] or 0) + 1
+
+    count = 0
     current_time = start_time
 
     while current_time <= end_time:
-        # 生成随机数据
         ph = round(random.uniform(*ranges["ph"]), 2)
         do_val = round(random.uniform(*ranges["do"]), 2)
         turb = round(random.uniform(*ranges["turb"]), 2)
         temp = round(random.uniform(*ranges["temp"]), 2)
         ec = round(random.uniform(*ranges["ec"]), 2)
-
-        # 10%概率产生告警
         alarm = 1 if random.random() < 0.1 else 0
 
-        # 插入数据
         try:
             cursor.execute(
                 """
@@ -154,14 +203,26 @@ def generate_city_data(city_name, city_config, hours=24, interval=30):
                 (device_id, current_time, seq, ph, do_val, turb, temp, ec, alarm)
             )
             seq += 1
+            count += 1
         except sqlite3.IntegrityError:
-            pass
+            seq += 1
 
         current_time += interval
 
     conn.commit()
     conn.close()
-    print(f"[OK] Generated {seq} records for {city_name}")
+    print(f"[OK] Generated {count} records for {city_name}")
+
+
+def regenerate_all(hours=24, interval=30):
+    """清空旧数据，为所有城市重新生成"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM metric")
+    conn.commit()
+    conn.close()
+    create_database()
+    for city_name, config in CITY_CONFIG.items():
+        generate_city_data(city_name, config, hours=hours, interval=interval)
 
 
 def main():
@@ -169,24 +230,15 @@ def main():
     print(" Water Monitoring System - Test Data Generator")
     print("=" * 60)
     print()
-
-    # 1. 创建数据库
-    print("Step 1: Creating database...")
+    print("Creating database...")
     create_database()
     print()
-
-    # 2. 生成各城市数据
-    print("Step 2: Generating test data...")
-    for city_name, config in CITY_CONFIG.items():
-        generate_city_data(city_name, config, hours=24, interval=30)
-
+    print("Generating test data for all cities...")
+    regenerate_all()
     print()
     print("=" * 60)
     print("[OK] All data generated successfully!")
     print("=" * 60)
-    print()
-    print("You can now run: streamlit run app_streamlit.py")
-    print()
 
 
 if __name__ == "__main__":

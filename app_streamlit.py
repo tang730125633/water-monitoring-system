@@ -8,6 +8,7 @@ import sqlite3
 import pandas as pd
 import time
 import os
+import hashlib
 import streamlit as st
 import plotly.graph_objects as go
 import quick_generate
@@ -20,8 +21,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ─────────────────────────────────────────────
 # 数据库配置
-# Streamlit Cloud 的 repo 目录可能只读，优先用 /tmp
+# ─────────────────────────────────────────────
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _TMP_DB = "/tmp/water.db"
 _LOCAL_DB = os.path.join(_SCRIPT_DIR, "water.db")
@@ -31,13 +33,20 @@ if os.path.exists(_TMP_DB):
 elif os.access(_SCRIPT_DIR, os.W_OK):
     DB_PATH = _LOCAL_DB
 else:
-    # Cloud 环境：复制 repo 里的 db 到 /tmp（如果存在的话）
     import shutil
     if os.path.exists(_LOCAL_DB):
         shutil.copy2(_LOCAL_DB, _TMP_DB)
     DB_PATH = _TMP_DB
 
-# 城市到设备的映射
+# ─────────────────────────────────────────────
+# 管理员账号配置
+# ─────────────────────────────────────────────
+# 密码使用 SHA256 哈希存储，默认: admin / admin123
+ADMIN_ACCOUNTS = {
+    "admin": hashlib.sha256("admin123".encode()).hexdigest(),
+}
+
+# 城市到设备的映射 - 必须和 quick_generate.py 中的 CITY_CONFIG 完全对应
 CITY_DEVICE_MAP = {
     "北京市": "water_sensor_beijing",
     "上海市": "water_sensor_shanghai",
@@ -54,7 +63,52 @@ CITY_DEVICE_MAP = {
 
 
 # ─────────────────────────────────────────────
-# 主仪表盘数据函数
+# 登录页面
+# ─────────────────────────────────────────────
+
+def show_login_page():
+    """管理员登录界面"""
+    st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_l, col_c, col_r = st.columns([1, 2, 1])
+    with col_c:
+        st.markdown("")
+        st.markdown("")
+        st.markdown("## 💧 水环境监测系统")
+        st.markdown("Water Environment Monitoring System")
+        st.markdown("---")
+        st.markdown("#### 管理员登录")
+
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("用户名", placeholder="请输入用户名")
+            password = st.text_input("密码", type="password", placeholder="请输入密码")
+            submitted = st.form_submit_button("登 录", use_container_width=True, type="primary")
+
+        if submitted:
+            if not username or not password:
+                st.error("请填写用户名和密码")
+            else:
+                pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                if username in ADMIN_ACCOUNTS and ADMIN_ACCOUNTS[username] == pwd_hash:
+                    st.session_state["logged_in"] = True
+                    st.session_state["username"] = username
+                    st.success("登录成功！")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("用户名或密码错误")
+
+        st.markdown("---")
+        st.caption("默认账号: admin / admin123")
+
+
+# ─────────────────────────────────────────────
+# 数据函数
 # ─────────────────────────────────────────────
 
 @st.cache_data(ttl=30)
@@ -79,20 +133,6 @@ def load_data(device_id, hours=24):
     except Exception as e:
         st.error(f"数据加载错误: {e}")
         return pd.DataFrame()
-
-
-@st.cache_data(ttl=60)
-def get_devices():
-    """获取所有设备列表"""
-    try:
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        devices = pd.read_sql_query(
-            "SELECT DISTINCT device_id FROM metric ORDER BY device_id", conn
-        )
-        conn.close()
-        return devices["device_id"].tolist() if not devices.empty else ["unknown"]
-    except Exception:
-        return ["unknown"]
 
 
 @st.cache_data(ttl=60)
@@ -125,25 +165,18 @@ def create_line_chart(df, selected_metrics):
         return None
     fig = go.Figure()
     colors = {
-        "ph": "#FF6B6B",
-        "do": "#4ECDC4",
-        "turb": "#45B7D1",
-        "temp": "#FFA07A",
-        "ec": "#98D8C8",
+        "ph": "#FF6B6B", "do": "#4ECDC4", "turb": "#45B7D1",
+        "temp": "#FFA07A", "ec": "#98D8C8",
     }
     units = {
-        "ph": "pH",
-        "do": "mg/L",
-        "turb": "NTU",
-        "temp": "°C",
-        "ec": "µS/cm",
+        "ph": "pH", "do": "mg/L", "turb": "NTU",
+        "temp": "°C", "ec": "µS/cm",
     }
     for metric in selected_metrics:
         if metric in df.columns:
             fig.add_trace(
                 go.Scatter(
-                    x=df["datetime"],
-                    y=df[metric],
+                    x=df["datetime"], y=df[metric],
                     mode="lines+markers",
                     name=f"{metric.upper()} ({units.get(metric, '')})",
                     line=dict(color=colors.get(metric, "#000000"), width=2),
@@ -157,12 +190,8 @@ def create_line_chart(df, selected_metrics):
                 )
             )
     fig.update_layout(
-        title="水质参数趋势图",
-        xaxis_title="时间",
-        yaxis_title="数值",
-        hovermode="x unified",
-        showlegend=True,
-        height=500,
+        title="水质参数趋势图", xaxis_title="时间", yaxis_title="数值",
+        hovermode="x unified", showlegend=True, height=500,
         template="plotly_white",
     )
     return fig
@@ -172,8 +201,7 @@ def create_gauge_chart(value, title, min_val, max_val, color):
     """创建仪表盘图表"""
     fig = go.Figure(
         go.Indicator(
-            mode="gauge+number+delta",
-            value=value,
+            mode="gauge+number+delta", value=value,
             domain={"x": [0, 1], "y": [0, 1]},
             title={"text": title},
             delta={"reference": (min_val + max_val) / 2},
@@ -186,8 +214,7 @@ def create_gauge_chart(value, title, min_val, max_val, color):
                 ],
                 "threshold": {
                     "line": {"color": "red", "width": 4},
-                    "thickness": 0.75,
-                    "value": max_val * 0.9,
+                    "thickness": 0.75, "value": max_val * 0.9,
                 },
             },
         )
@@ -203,12 +230,18 @@ def create_gauge_chart(value, title, min_val, max_val, color):
 def show_dashboard():
     """主仪表盘"""
 
+    # 侧边栏 - 用户信息
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"👤 **{st.session_state.get('username', '')}**")
+    if st.sidebar.button("退出登录", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+    st.sidebar.markdown("---")
+
     # 城市选择
     st.sidebar.header("📍 地区选择")
     city = st.sidebar.selectbox(
-        "选择城市",
-        list(CITY_DEVICE_MAP.keys()),
-        index=0,
+        "选择城市", list(CITY_DEVICE_MAP.keys()), index=0,
         help="选择要查看的城市水环境数据"
     )
     device_id = CITY_DEVICE_MAP[city]
@@ -225,8 +258,7 @@ def show_dashboard():
         st.markdown("**显示指标**")
         all_metrics = ["ph", "do", "turb", "temp", "ec"]
         selected_metrics = st.multiselect(
-            "选择要显示的指标",
-            all_metrics,
+            "选择要显示的指标", all_metrics,
             default=["ph", "do", "temp"],
         )
 
@@ -274,12 +306,8 @@ def show_dashboard():
             alarm_df[["time_str", "ph", "do", "turb", "temp", "ec"]].head(20),
             use_container_width=True,
             column_config={
-                "time_str": "时间",
-                "ph": "pH值",
-                "do": "溶解氧",
-                "turb": "浊度",
-                "temp": "温度",
-                "ec": "电导率",
+                "time_str": "时间", "ph": "pH值", "do": "溶解氧",
+                "turb": "浊度", "temp": "温度", "ec": "电导率",
             },
         )
     else:
@@ -302,7 +330,8 @@ def show_dashboard():
             if metric in df.columns:
                 st.write(
                     f"- {metric.upper()}: "
-                    f"{df[metric].min():.2f} ~ {df[metric].max():.2f} (平均: {df[metric].mean():.2f})"
+                    f"{df[metric].min():.2f} ~ {df[metric].max():.2f} "
+                    f"(平均: {df[metric].mean():.2f})"
                 )
 
     # 自动刷新
@@ -316,35 +345,31 @@ def show_dashboard():
 # ─────────────────────────────────────────────
 
 def ensure_fresh_data():
-    """检查数据是否过期，过期则重新生成（每次启动只跑一次）"""
+    """检查数据是否过期，过期则重新生成"""
     if st.session_state.get("data_initialized"):
         return
     try:
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        row = conn.execute(
-            "SELECT MAX(ts) FROM metric"
-        ).fetchone()
+        row = conn.execute("SELECT MAX(ts) FROM metric").fetchone()
         conn.close()
         latest_ts = row[0] if row and row[0] else 0
-        # 数据超过2小时没更新，则清空重新生成
+        # 数据超过2小时没更新 -> 全量重新生成
         if int(time.time()) - latest_ts > 7200:
-            conn2 = sqlite3.connect(DB_PATH, check_same_thread=False)
-            conn2.execute("DELETE FROM metric")
-            conn2.commit()
-            conn2.close()
-            for city_name, config in quick_generate.CITY_CONFIG.items():
-                quick_generate.generate_city_data(city_name, config, hours=24, interval=30)
+            quick_generate.DB_PATH = DB_PATH
+            quick_generate.regenerate_all()
     except Exception:
-        # 数据库/表不存在时，初始化并全量生成
+        quick_generate.DB_PATH = DB_PATH
         quick_generate.create_database()
-        for city_name, config in quick_generate.CITY_CONFIG.items():
-            quick_generate.generate_city_data(city_name, config, hours=24, interval=30)
+        quick_generate.regenerate_all()
     st.session_state["data_initialized"] = True
 
 
 def main():
     ensure_fresh_data()
-    show_dashboard()
+    if not st.session_state.get("logged_in"):
+        show_login_page()
+    else:
+        show_dashboard()
 
 
 if __name__ == "__main__":
